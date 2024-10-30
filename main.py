@@ -3,73 +3,62 @@
 # Wynik przedstaw w czytelnej formie na standardowym wyjściu
 
 import json
+class Main:
+    CT_TO_OUNCE = 0.00705479239
+    G_TO_OUNCE = 0.0352739619
 
-def find_closest_purity(type, purity):
-    available_purities = list(categories.get(type, {}).keys())
-    if purity in available_purities:
-        return purity
+    def __init__(self, categories_path="kategorie.json", items_path="zbiór_wejściowy.json"):
+        self.categories: dict = self._load_categories(self._open_json(categories_path))
+        self.items: dict = self._open_json(items_path)
+        self.mapped_items:list[dict] = self._map_items()
 
-    if not purity.isnumeric():
-        return None
+    @staticmethod
+    def _open_json(file_path: str) -> dict:
+        with open(file_path, 'r', encoding='utf-8') as file:
+            return json.load(file)
 
-    # Fallback to the closest match or None
-    closest = min(available_purities, key=lambda x: abs(int(x) - int(purity)), default=None)
-    return closest
+    @staticmethod
+    def _load_categories(categories_data: dict) -> dict[str, dict[str, int]]:
+        parsed_dict: dict = {}
+        for item in categories_data:
+            if item["Typ"] not in parsed_dict:
+                parsed_dict[item["Typ"]] = {}
+            parsed_dict[item["Typ"]][item["Czystość"]] = item['Wartość za uncję (USD)']
+        return parsed_dict
 
+    def _map_items(self) -> list[dict]:
+        mapped_items: list = []
+        for item in self.items:
+            purity: str = item.get("Czystość")
+            name: str = item.get("Typ")
+            unit_price: int = self.categories.get(name, {}).get(purity)
 
-#read categories from file
-categories = {}
-with open('kategorie.json', 'r', encoding='utf-8') as file:
-    data = json.load(file)
-    for item in data:
+            if unit_price is None:
+                continue
 
-        if item["Typ"] not in categories:
-            categories[item["Typ"]] = {}
-        categories[item["Typ"]][item["Czystość"]] = item['Wartość za uncję (USD)']
+            oz_weight: float = self._calc_oz_weight(item.get("Masa"))
+            item["Cena"]: float = oz_weight * unit_price
+            mapped_items.append(item)
 
-#print(categories)
+        return mapped_items
 
-
-#read and process valueables from file
-ct_to_ounce = 0.00705479239
-g_to_ounce = 0.0352739619
-items = []
-with open('zbiór_wejściowy.json', 'r', encoding='utf-8') as file:
-    data = json.load(file)
-    for item in data:
-
-        weight = item["Masa"].replace(',', '.')
-        purity = item["Czystość"]
-        type = item["Typ"]
-
-        #convert gem's weight to ounces
-        if weight[-2:] == 'ct':
-            weight = float(weight[:-2]) * ct_to_ounce
+    def _calc_oz_weight(self, weight: str) -> float:
+        if weight.endswith("ct"):
+            return float(weight[:-2].replace(",", ".")) * self.CT_TO_OUNCE
+        elif weight.endswith("g"):
+            return float(weight[:-1].replace(",", ".")) * self.G_TO_OUNCE
         else:
-            if weight[-1:] == 'g':
-                weight = float(weight[:-1]) * g_to_ounce
-            else:
-                print(f"Error, unknown unit in {item}")
+            raise ValueError(f"Unknown weight unit: {weight}")
 
-        # Find the closest available purity for the given type
-        matched_purity = find_closest_purity(type, purity)
-        if matched_purity is None:
-            print(f"Warning: No matching purity found for {item}")
-            continue
-
-        unit_price = categories[type][matched_purity]
-        item["Cena"] = weight * unit_price
-        items.append(item)
+    def print_top_items(self) -> None:
+        items_sorted: list = sorted(self.mapped_items, key=lambda x: x.get("Cena", 0), reverse=True)
+        for i, item in enumerate(items_sorted[:5], start=1):
+            print(f"{i}:")
+            for key, value in item.items():
+                print(f"\t{key}: {value}")
+            print("\n")
 
 
-#sort the items and output the 5 priciest ones in a readable format
-items_sorted = sorted(items, key=lambda x: x.get("Cena", 0), reverse=True)
-i = 1
-print("\n")
-for item in items_sorted[:5]:
-    print(f"{i}:")
-    for key in item:
-        print(f"\t{key}: {item[key]}")
-
-    print("\n")
-    i+=1
+if __name__ == '__main__':
+    main = Main("kategorie.json", "zbiór_wejściowy.json")
+    main.print_top_items()
